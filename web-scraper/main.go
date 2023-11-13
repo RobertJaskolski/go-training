@@ -5,6 +5,7 @@ import (
 	"golang.org/x/net/html"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 func main() {
@@ -33,4 +34,84 @@ func main() {
 	page, err := strconv.Atoi(nodes[len(nodes)-1].FirstChild.Data)
 
 	fmt.Println("Number of pages:", strconv.Itoa(page))
+
+	flats := make([]Flat, 0)
+	for i := 1; i <= page; i++ {
+		nodes, _, err = webScraper.Visit("pl/wyniki/sprzedaz/mieszkanie/slaskie/katowice/katowice/katowice?viewType=listing&limit=72&page=" + strconv.Itoa(i))
+		if err != nil {
+			panic(err)
+		}
+
+		nodes, err = GetByAttribute(nodes, html.Attribute{Namespace: "", Key: "data-cy", Val: "listing-item-link"})
+		if err != nil {
+			panic(err)
+		}
+
+		// Get specific offer
+		for _, node := range nodes {
+			for _, attr := range node.Attr {
+				if attr.Key == "href" {
+					if node != nil && len(node.Attr) >= 2 {
+						offerNodes, status, err := webScraper.Visit(node.Attr[1].Val)
+						if err != nil {
+							panic(err)
+						}
+						if status == http.StatusOK {
+							// Make a CSV file
+							n, err := GetByAttribute(offerNodes, html.Attribute{Namespace: "", Key: "data-testid", Val: "table-value-area"})
+							if err != nil {
+								panic(err)
+							}
+
+							surface, err := strconv.ParseFloat(strings.Replace(n[0].FirstChild.Data[:len(n[0].FirstChild.Data)-4], ",", ".", 1), 64)
+							if err != nil {
+								surface = 0.0
+							}
+
+							n, err = GetByAttribute(offerNodes, html.Attribute{Namespace: "", Key: "data-testid", Val: "table-value-rooms_num"})
+							if err != nil {
+								panic(err)
+							}
+
+							noOfRooms, err := strconv.Atoi(strings.Trim(n[0].LastChild.Data, " "))
+							if err != nil {
+								noOfRooms, err = strconv.Atoi(strings.Trim(n[0].LastChild.FirstChild.Data, " "))
+								if err != nil {
+									noOfRooms = 0
+								}
+							}
+
+							// Add to Flats
+							flats = append(flats, Flat{
+								Name:      node.Attr[1].Val,
+								Surface:   surface,
+								NoOfRooms: noOfRooms,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Save flats to csv
+	//csvFile, err := os.Create("flats.csv")
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//defer csvFile.Close()
+
+	//for _, flat := range flats {
+	//	row := fmt.Sprintf(flat.Name, ",", fmt.Sprintf("%f", flat.Surface), ",", strconv.Itoa(flat.NoOfRooms))
+	//	if _, err := csvFile.Write([]byte(row)); err != nil {
+	//		log.Fatalln("error writing record to file", err)
+	//	}
+	//}
+}
+
+type Flat struct {
+	Name      string  `json:"name"`
+	Surface   float64 `json:"surface"`
+	NoOfRooms int     `json:"no_of_rooms"`
 }
