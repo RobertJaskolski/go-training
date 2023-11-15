@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"golang.org/x/net/html"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -36,7 +39,7 @@ func main() {
 	fmt.Println("Number of pages:", strconv.Itoa(page))
 
 	flats := make([]Flat, 0)
-	for i := 1; i <= page; i++ {
+	for i := 1; i <= 5; i++ {
 		nodes, _, err = webScraper.Visit("pl/wyniki/sprzedaz/mieszkanie/slaskie/katowice/katowice/katowice?viewType=listing&limit=72&page=" + strconv.Itoa(i))
 		if err != nil {
 			panic(err)
@@ -94,20 +97,25 @@ func main() {
 		}
 	}
 
-	// Save flats to csv
-	//csvFile, err := os.Create("flats.csv")
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//defer csvFile.Close()
+	//Save flats to csv
+	file, err := os.Create("flats.csv")
+	if err != nil {
+		panic(err)
+	}
 
-	//for _, flat := range flats {
-	//	row := fmt.Sprintf(flat.Name, ",", fmt.Sprintf("%f", flat.Surface), ",", strconv.Itoa(flat.NoOfRooms))
-	//	if _, err := csvFile.Write([]byte(row)); err != nil {
-	//		log.Fatalln("error writing record to file", err)
-	//	}
-	//}
+	defer file.Close()
+	writer := csv.NewWriter(file)
+
+	if err := writer.Write([]string{"Nazwa", "Powierzchnia", "Liczba pokoi"}); err != nil {
+		log.Fatalln("error writing record to file", err)
+	}
+
+	for _, flat := range flats {
+		row := []string{flat.Name, fmt.Sprintf("%f", flat.Surface), strconv.Itoa(flat.NoOfRooms)}
+		if err := writer.Write(row); err != nil {
+			log.Fatalln("error writing record to file", err)
+		}
+	}
 }
 
 type Flat struct {
