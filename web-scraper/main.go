@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	webScraper := &WebScraper{baseURL: "https://www.otodom.pl/", Client: &http.Client{}}
+	webScraper := WebScraper{baseURL: "https://www.otodom.pl/", Client: &http.Client{}}
 
 	// Set Agent Header
 	webScraper.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Safari/537.36")
@@ -39,7 +39,8 @@ func main() {
 	fmt.Println("Number of pages:", strconv.Itoa(page))
 
 	flats := make([]Flat, 0)
-	for i := 1; i <= 5; i++ {
+	flatCh := make(chan Flat)
+	for i := 1; i <= page; i++ {
 		nodes, _, err = webScraper.Visit("pl/wyniki/sprzedaz/mieszkanie/slaskie/katowice/katowice/katowice?viewType=listing&limit=72&page=" + strconv.Itoa(i))
 		if err != nil {
 			panic(err)
@@ -55,46 +56,19 @@ func main() {
 			for _, attr := range node.Attr {
 				if attr.Key == "href" {
 					if node != nil && len(node.Attr) >= 2 {
-						offerNodes, status, err := webScraper.Visit(node.Attr[1].Val)
-						if err != nil {
-							panic(err)
-						}
-						if status == http.StatusOK {
-							// Make a CSV file
-							n, err := GetByAttribute(offerNodes, html.Attribute{Namespace: "", Key: "data-testid", Val: "table-value-area"})
-							if err != nil {
-								panic(err)
-							}
-
-							surface, err := strconv.ParseFloat(strings.Replace(n[0].FirstChild.Data[:len(n[0].FirstChild.Data)-4], ",", ".", 1), 64)
-							if err != nil {
-								surface = 0.0
-							}
-
-							n, err = GetByAttribute(offerNodes, html.Attribute{Namespace: "", Key: "data-testid", Val: "table-value-rooms_num"})
-							if err != nil {
-								panic(err)
-							}
-
-							noOfRooms, err := strconv.Atoi(strings.Trim(n[0].LastChild.Data, " "))
-							if err != nil {
-								noOfRooms, err = strconv.Atoi(strings.Trim(n[0].LastChild.FirstChild.Data, " "))
-								if err != nil {
-									noOfRooms = 0
-								}
-							}
-
-							// Add to Flats
-							flats = append(flats, Flat{
-								Name:      node.Attr[1].Val,
-								Surface:   surface,
-								NoOfRooms: noOfRooms,
-							})
-						}
+						go fetchOffer(&webScraper, flatCh, node.Attr[1].Val)
 					}
 				}
 			}
 		}
+	}
+
+	// CLOSE CHANNEL
+	close(flatCh)
+
+	// CONSUME FLATS
+	for flat := range flatCh {
+		flats = append(flats, flat)
 	}
 
 	//Save flats to csv
@@ -122,4 +96,42 @@ type Flat struct {
 	Name      string  `json:"name"`
 	Surface   float64 `json:"surface"`
 	NoOfRooms int     `json:"no_of_rooms"`
+}
+
+func fetchOffer(webScraper *WebScraper, flatCh chan<- Flat, url string) {
+	offerNodes, status, err := webScraper.Visit(url)
+	if err != nil {
+		panic(err)
+	}
+	if status == http.StatusOK {
+		// Make a CSV file
+		n, err := GetByAttribute(offerNodes, html.Attribute{Namespace: "", Key: "data-testid", Val: "table-value-area"})
+		if err != nil {
+			panic(err)
+		}
+
+		surface, err := strconv.ParseFloat(strings.Replace(n[0].FirstChild.Data[:len(n[0].FirstChild.Data)-4], ",", ".", 1), 64)
+		if err != nil {
+			surface = 0.0
+		}
+
+		n, err = GetByAttribute(offerNodes, html.Attribute{Namespace: "", Key: "data-testid", Val: "table-value-rooms_num"})
+		if err != nil {
+			panic(err)
+		}
+
+		noOfRooms, err := strconv.Atoi(strings.Trim(n[0].LastChild.Data, " "))
+		if err != nil {
+			noOfRooms, err = strconv.Atoi(strings.Trim(n[0].LastChild.FirstChild.Data, " "))
+			if err != nil {
+				noOfRooms = 0
+			}
+		}
+
+		flatCh <- Flat{
+			Name:      url,
+			Surface:   surface,
+			NoOfRooms: noOfRooms,
+		}
+	}
 }
