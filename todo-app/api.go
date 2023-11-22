@@ -1,17 +1,20 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
 )
 
+// TYPES -------------------------------
+
 type APIServer struct {
 	listenAddress string
 	store         Storage
 }
+
+// METHODS -------------------------------
 
 func NewAPIServer(listenAddress string, store Storage) *APIServer {
 	return &APIServer{
@@ -30,24 +33,7 @@ func (s *APIServer) Run() {
 	http.ListenAndServe(s.listenAddress, router)
 }
 
-type apiFunc func(http.ResponseWriter, *http.Request) error
-
-func makeHTTPHandlerFunc(f apiFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := f(w, r); err != nil {
-			WriteJSON(w, http.StatusBadRequest, APIError{Error: err.Error()})
-		}
-	}
-}
-
-func WriteJSON(w http.ResponseWriter, status int, v any) error {
-	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	return json.NewEncoder(w).Encode(v)
-}
-
-// Handlers
+// HANDLERS -------------------------------
 
 func (s *APIServer) handleTask(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "POST" {
