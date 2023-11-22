@@ -10,10 +10,12 @@ import (
 
 type APIServer struct {
 	listenAddress string
+	store         Storage
 }
 
-func NewAPIServer(listenAddress string) *APIServer {
+func NewAPIServer(listenAddress string, store Storage) *APIServer {
 	return &APIServer{
+		store:         store,
 		listenAddress: listenAddress,
 	}
 }
@@ -39,8 +41,8 @@ func makeHTTPHandlerFunc(f apiFunc) http.HandlerFunc {
 }
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
+	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Header().Set("Content-Type", "application/json")
 
 	return json.NewEncoder(w).Encode(v)
 }
