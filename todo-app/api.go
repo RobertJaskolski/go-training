@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 // TYPES -------------------------------
@@ -27,7 +29,7 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/task", makeHTTPHandlerFunc(s.handleTask))
-	router.HandleFunc("/task{id}", makeHTTPHandlerFunc(s.handleTaskWithID))
+	router.HandleFunc("/task/{id}", makeHTTPHandlerFunc(s.handleTaskWithID))
 
 	log.Println("JSON API Server running on port: ", s.listenAddress)
 	http.ListenAndServe(s.listenAddress, router)
@@ -49,11 +51,14 @@ func (s *APIServer) handleTask(w http.ResponseWriter, r *http.Request) error {
 
 func (s *APIServer) handleTaskWithID(w http.ResponseWriter, r *http.Request) error {
 	id := mux.Vars(r)["id"]
+	intID, err := strconv.Atoi(id)
 
-	fmt.Println(id)
+	if err != nil {
+		return fmt.Errorf("invalid id given %s", id)
+	}
 
 	if r.Method == "GET" {
-		return s.handleGetTask(w, r)
+		return s.handleGetTask(intID, w, r)
 	}
 
 	if r.Method == "PATCH" {
@@ -68,15 +73,40 @@ func (s *APIServer) handleTaskWithID(w http.ResponseWriter, r *http.Request) err
 }
 
 func (s *APIServer) handlePostTasks(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	payload := new(CreateTaskDTO)
+	if err := json.NewDecoder(r.Body).Decode(payload); err != nil {
+		return err
+	}
+
+	if payload.Title == "" || payload.Description == "" {
+		return WriteJSON(w, http.StatusBadRequest, APIError{Error: "Bad request body"})
+	}
+
+	if err := s.store.CreateTask(payload); err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusCreated, payload)
 }
 
-func (s *APIServer) handleGetTask(w http.ResponseWriter, r *http.Request) error {
-	return nil
+func (s *APIServer) handleGetTask(id int, w http.ResponseWriter, r *http.Request) error {
+	account, err := s.store.GetTaskByID(id)
+
+	if err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, account)
 }
 
 func (s *APIServer) handleGetTasks(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	accounts, err := s.store.GetTasks()
+
+	if err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, accounts)
 }
 
 func (s *APIServer) handlePatchTasks(w http.ResponseWriter, r *http.Request) error {

@@ -2,16 +2,17 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	_ "github.com/lib/pq"
 )
 
 // TYPES -------------------------------
 
 type Storage interface {
-	CreateTask(*Task) error
-	GetTasks() error
-	GetTaskByID(int) error
-	UpdateTask(*Task) error
+	CreateTask(*CreateTaskDTO) error
+	GetTasks() ([]*Task, error)
+	GetTaskByID(int) (*Task, error)
+	UpdateTask(*UpdateTaskDTO) error
 	DeleteTask(int) error
 }
 
@@ -47,8 +48,8 @@ func (s *PostgresStore) CreateTasksTable() error {
     		id serial primary key,
     		title varChar(50),
 		    description varchar(356),
-		    created_at timestamp,
-		    modified_at timestamp
+		    created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+		    modified_at timestamp DEFAULT CURRENT_TIMESTAMP
 		)`
 
 	_, err := s.db.Exec(query)
@@ -57,19 +58,61 @@ func (s *PostgresStore) CreateTasksTable() error {
 
 // HANDLERS -------------------------------
 
-func (*PostgresStore) CreateTask(*Task) error {
+func (s *PostgresStore) CreateTask(dto *CreateTaskDTO) error {
+	query := `
+		INSERT INTO tasks 
+		    (title, description) 
+		VALUES 
+		    ($1, $2)
+	`
+	_, err := s.db.Query(query, dto.Title, dto.Description)
+
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (*PostgresStore) GetTasks() error {
-	return nil
+func (s *PostgresStore) GetTasks() ([]*Task, error) {
+	rows, err := s.db.Query("SELECT * FROM tasks")
+	if err != nil {
+		return nil, err
+	}
+
+	var tasks []*Task
+	for rows.Next() {
+		task := new(Task)
+		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
+			return nil, err
+		}
+
+		tasks = append(tasks, task)
+	}
+
+	return tasks, nil
 }
 
-func (*PostgresStore) GetTaskByID(int) error {
-	return nil
+func (s *PostgresStore) GetTaskByID(id int) (*Task, error) {
+	rows, err := s.db.Query("SELECT * FROM tasks WHERE tasks.id = $1", id)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		task := new(Task)
+		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
+			return nil, err
+		}
+
+		return task, nil
+	}
+
+	return nil, fmt.Errorf("task %d not found", id)
 }
 
-func (*PostgresStore) UpdateTask(*Task) error {
+func (*PostgresStore) UpdateTask(dto *UpdateTaskDTO) error {
 	return nil
 }
 
