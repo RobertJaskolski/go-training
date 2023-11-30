@@ -9,10 +9,10 @@ import (
 // TYPES -------------------------------
 
 type Storage interface {
-	CreateTask(*CreateTaskDTO) error
+	CreateTask(*CreateTaskDTO) (*Task, error)
 	GetTasks() ([]*Task, error)
 	GetTaskByID(int) (*Task, error)
-	UpdateTask(*UpdateTaskDTO) error
+	UpdateTask(int, *UpdateTaskDTO) (*Task, error)
 	DeleteTask(int) error
 }
 
@@ -42,6 +42,8 @@ func (s *PostgresStore) Init() error {
 	return s.CreateTasksTable()
 }
 
+// HANDLERS -------------------------------
+
 func (s *PostgresStore) CreateTasksTable() error {
 	query := `
 		CREATE TABLE IF NOT EXISTS tasks (
@@ -56,26 +58,36 @@ func (s *PostgresStore) CreateTasksTable() error {
 	return err
 }
 
-// HANDLERS -------------------------------
-
-func (s *PostgresStore) CreateTask(dto *CreateTaskDTO) error {
+func (s *PostgresStore) CreateTask(dto *CreateTaskDTO) (*Task, error) {
 	query := `
 		INSERT INTO tasks 
 		    (title, description) 
 		VALUES 
 		    ($1, $2)
+		RETURNING id, title, description, created_at, modified_at
 	`
-	_, err := s.db.Query(query, dto.Title, dto.Description)
+	rows, err := s.db.Query(query, dto.Title, dto.Description)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	for rows.Next() {
+		task := new(Task)
+		if err = rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
+			return nil, err
+		}
+
+		fmt.Println(task)
+
+		return task, nil
+	}
+
+	return nil, nil
 }
 
 func (s *PostgresStore) GetTasks() ([]*Task, error) {
-	rows, err := s.db.Query("SELECT * FROM tasks")
+	rows, err := s.db.Query("SELECT * FROM tasks ORDER BY tasks.id")
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +95,7 @@ func (s *PostgresStore) GetTasks() ([]*Task, error) {
 	var tasks []*Task
 	for rows.Next() {
 		task := new(Task)
-		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
+		if err = rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
 			return nil, err
 		}
 
@@ -102,7 +114,7 @@ func (s *PostgresStore) GetTaskByID(id int) (*Task, error) {
 
 	for rows.Next() {
 		task := new(Task)
-		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
+		if err = rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
 			return nil, err
 		}
 
@@ -112,10 +124,50 @@ func (s *PostgresStore) GetTaskByID(id int) (*Task, error) {
 	return nil, fmt.Errorf("task %d not found", id)
 }
 
-func (*PostgresStore) UpdateTask(dto *UpdateTaskDTO) error {
-	return nil
+func (s *PostgresStore) UpdateTask(id int, dto *UpdateTaskDTO) (*Task, error) {
+	dtoValues := make(map[string]string)
+	if dto.Title != "" {
+		dtoValues["title"] = dto.Title
+	}
+
+	if dto.Description != "" {
+		dtoValues["description"] = dto.Description
+	}
+
+	query := "UPDATE tasks SET modified_at = CURRENT_TIMESTAMP, "
+	i := 0
+	for key, value := range dtoValues {
+		query += fmt.Sprintf("%v = '%v'", key, value)
+		if i != len(dtoValues)-1 {
+			query += ","
+		}
+		query += " "
+		i++
+	}
+	query += "WHERE tasks.id = $1 RETURNING id, title, description, created_at, modified_at"
+	rows, err := s.db.Query(query, id)
+	for rows.Next() {
+		task := new(Task)
+		if err = rows.Scan(&task.ID, &task.Title, &task.Description, &task.CreatedAt, &task.ModifiedAt); err != nil {
+			return nil, err
+		}
+
+		return task, nil
+	}
+
+	return nil, nil
 }
 
-func (*PostgresStore) DeleteTask(int) error {
-	return nil
+func (s *PostgresStore) DeleteTask(id int) error {
+	rows, err := s.db.Query("DELETE FROM tasks WHERE tasks.id = $1 RETURNING id", id)
+	for rows.Next() {
+		task := new(Task)
+		if err = rows.Scan(&task.ID); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("task %d not found", id)
 }

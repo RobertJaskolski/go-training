@@ -32,7 +32,10 @@ func (s *APIServer) Run() {
 	router.HandleFunc("/task/{id}", makeHTTPHandlerFunc(s.handleTaskWithID))
 
 	log.Println("JSON API Server running on port: ", s.listenAddress)
-	http.ListenAndServe(s.listenAddress, router)
+	err := http.ListenAndServe(s.listenAddress, router)
+	if err != nil {
+		return
+	}
 }
 
 // HANDLERS -------------------------------
@@ -62,11 +65,11 @@ func (s *APIServer) handleTaskWithID(w http.ResponseWriter, r *http.Request) err
 	}
 
 	if r.Method == "PATCH" {
-		return s.handlePatchTasks(w, r)
+		return s.handlePatchTasks(intID, w, r)
 	}
 
 	if r.Method == "DELETE" {
-		return s.handleDeleteTasks(w, r)
+		return s.handleDeleteTasks(intID, w, r)
 	}
 
 	return fmt.Errorf("method not allowed %s", r.Method)
@@ -82,11 +85,12 @@ func (s *APIServer) handlePostTasks(w http.ResponseWriter, r *http.Request) erro
 		return WriteJSON(w, http.StatusBadRequest, APIError{Error: "Bad request body"})
 	}
 
-	if err := s.store.CreateTask(payload); err != nil {
+	task, err := s.store.CreateTask(payload)
+	if err != nil {
 		return err
 	}
 
-	return WriteJSON(w, http.StatusCreated, payload)
+	return WriteJSON(w, http.StatusCreated, task)
 }
 
 func (s *APIServer) handleGetTask(id int, w http.ResponseWriter, r *http.Request) error {
@@ -109,10 +113,30 @@ func (s *APIServer) handleGetTasks(w http.ResponseWriter, r *http.Request) error
 	return WriteJSON(w, http.StatusOK, accounts)
 }
 
-func (s *APIServer) handlePatchTasks(w http.ResponseWriter, r *http.Request) error {
-	return nil
+func (s *APIServer) handlePatchTasks(id int, w http.ResponseWriter, r *http.Request) error {
+	payload := new(UpdateTaskDTO)
+	if err := json.NewDecoder(r.Body).Decode(payload); err != nil {
+		return err
+	}
+
+	if payload.Title == "" && payload.Description == "" {
+		return WriteJSON(w, http.StatusBadRequest, APIError{Error: "Bad request body"})
+	}
+
+	task, err := s.store.UpdateTask(id, payload)
+	if err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusAccepted, task)
 }
 
-func (s *APIServer) handleDeleteTasks(w http.ResponseWriter, r *http.Request) error {
-	return nil
+func (s *APIServer) handleDeleteTasks(id int, w http.ResponseWriter, r *http.Request) error {
+	err := s.store.DeleteTask(id)
+
+	if err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusAccepted, APIESuccess{Success: true})
 }

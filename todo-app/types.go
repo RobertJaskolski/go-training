@@ -3,7 +3,11 @@ package main
 import "time"
 
 type APIError struct {
-	Error string
+	Error string `json:"error"`
+}
+
+type APIESuccess struct {
+	Success bool `json:"success"`
 }
 
 type Task struct {
